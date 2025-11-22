@@ -24,11 +24,19 @@ env/
 # ======================
 data/**
 !data/.gitkeep
+# 如有需要，可参考下方模型目录写法
 
 models/**
+!models/
 !models/.gitkeep
+
+!models/embeddings/
 !models/embeddings/.gitkeep
+
+!models/sentiment/
 !models/sentiment/.gitkeep
+
+!models/clustering/
 !models/clustering/.gitkeep
 
 # 如后续新增 models/xx/ 目录，同样加一条：
@@ -55,7 +63,6 @@ coverage/
 # 配置 / 环境变量
 # ======================
 .env
-.env.*
 !.env.example   # 保留模板文件
 
 # ======================
