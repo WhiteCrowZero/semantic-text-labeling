@@ -1,0 +1,69 @@
+# ======================
+# Python 通用
+# ======================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+.mypy_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# ======================
+# 数据 & 模型
+#   - 只保留目录结构
+#   - 数据和权重不入库
+# ======================
+data/**
+!data/.gitkeep
+
+models/**
+!models/.gitkeep
+!models/embeddings/.gitkeep
+!models/sentiment/.gitkeep
+!models/clustering/.gitkeep
+
+# 如后续新增 models/xx/ 目录，同样加一条：
+# !models/xx/.gitkeep
+
+# ======================
+# 前端相关
+# ======================
+node_modules/
+dist/
+build/
+.cache/
+.npm/
+.yarn/
+.next/
+.nuxt/
+coverage/
+
+# 打包产物（按框架可再补）
+*.log
+*.tmp
+
+# ======================
+# 配置 / 环境变量
+# ======================
+.env
+.env.*
+!.env.example   # 保留模板文件
+
+# ======================
+# 操作系统 / 编辑器
+# ======================
+.DS_Store
+Thumbs.db
+
+.idea/
+.vscode/
+*.swp
