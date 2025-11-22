@@ -51,6 +51,14 @@ project-root/
 
     * `main`：稳定分支，只接收 PR，禁止直接 push。
     * 功能分支：`feature/embeddings-*`、`feature/sentiment-*`、`feature/clustering-*`、`feature/web-*`。
+    * 每次一个功能一定新开一个分支，而不要长期使用一个个人分支
+    * 约定分支格式：
+      ```
+      feature/<模块>-<内容>-<姓名缩写>
+      fix/<模块>-<问题>-<姓名缩写>
+      
+      eg. feature/clustering-init-wzw
+      ```
 
 * 提交流程
 
@@ -62,7 +70,7 @@ project-root/
 
     * `feat: add sentiment predictor`
     * `fix: handle empty text in clustering pipeline`
-    * 具体内容参照表格![git rules](docs/img/git_rules.png)
+    * 具体内容参照表格![git rules](img/git_rules.png)
 
 ---
 
@@ -81,7 +89,7 @@ project-root/
     * 核心模块建议使用自动格式化：
 
         * `black`格式化工具
-          ![install black in pycharm](docs/img/install_black.png)
+          ![install black in pycharm](img/install_black.png)
 
 * 日志
 
