@@ -43,6 +43,9 @@ models/**
 !models/clustering/
 !models/clustering/.gitkeep
 
+!models/ner/
+!models/ner/.gitkeep
+
 # 如后续新增 models/xx/ 目录，同样加一条：
 # !models/xx/.gitkeep
 
@@ -78,3 +81,8 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# ======================
+# 测试
+# ======================
+tests/**
