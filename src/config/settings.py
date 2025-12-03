@@ -17,72 +17,42 @@ CONFIG = {
     "EMBEDDING": {},
     "SENTIMENT": {},
     "CLUSTERING": {},
+    "NLP": {},
 }
 
 # ========= embedding =========
-# EMBEDDING = {
-#     # 模型：推荐中文 RoBERTa WWM，比 bert-base-chinese 更强一些
-#     "model_name": "hfl/chinese-roberta-wwm-ext",
-#     # 若指定本地模型路径，则优先从本地加载；为空则使用 model_name 从 HuggingFace 下载
-#     "local_model_path": os.getenv(
-#         "LOCAL_MODEL_PATH",
-#         os.path.join(MODEL_DIR, "embeddings","chinese-roberta-wwm-ext")
-#     ),
-#     # 设备：cuda / cpu，留空则自动检测
-#     "device": os.getenv("DEVICE", ""),
-#
-#     # BERT 相关参数
-#     "max_length": 64,
-#     "batch_size": 32,
-#
-#     # 输入数据集：CSV 路径
-#     "input_csv": os.getenv("INPUT_CSV", os.path.join(DATA_DIR, "input", "train.csv")),
-#     # 数据集信息
-#     "text_column": "content",
-#     "id_column": "content_id",
-#     "label_column": "sentiment_value",  # 比如：-1/0/1 或 0/1/2
-#
-#     # 语义向量文件
-#     "output_embeddings": os.getenv(
-#         "OUTPUT_EMBEDDING", os.path.join(DATA_DIR, "output", "bert_embeddings.npy")
-#     ),
-#     # 带 meta 的 npz 文件
-#     "output_npz": os.getenv(
-#         "OUTPUT_NPZ", os.path.join(DATA_DIR, "output", "bert_with_id_label.npz")
-#     ),
-#     # 元信息（和原始 df 一样，只是顺序固定）
-#     "output_meta": os.getenv(
-#         "OUTPUT_META", os.path.join(DATA_DIR, "output", "reviews_meta.csv")
-#     ),
-# }
-
 EMBEDDING = {
-    "dataset_type": "thucnews_dir",  # 关键开关：thucnews_dir / csv
-
-    # THUCNews 根目录（下面是多个类别子目录）
-    "input_dir": os.path.join(DATA_DIR, "thucnews", "train"),
-
-    # BERT 模型
+    # 模型：推荐中文 RoBERTa WWM，比 bert-base-chinese 更强一些
     "model_name": "hfl/chinese-roberta-wwm-ext",
-    "local_model_path": os.path.join(MODEL_DIR, "chinese-roberta-wwm-ext"),
-    "device": "",
-
-    "max_length": 128,
+    # 若指定本地模型路径，则优先从本地加载；为空则使用 model_name 从 HuggingFace 下载
+    "local_model_path": os.getenv(
+        "LOCAL_MODEL_PATH",
+        os.path.join(MODEL_DIR, "embeddings", "chinese-roberta-wwm-ext"),
+    ),
+    # 设备：cuda / cpu，留空则自动检测
+    "device": os.getenv("DEVICE", ""),
+    # BERT 相关参数
+    "max_length": 64,
     "batch_size": 32,
-
-    # 列名约定（与上面代码保持一致）
+    # 输入数据集：CSV 路径
+    "input_csv": os.getenv("INPUT_CSV", os.path.join(DATA_DIR, "input", "train.csv")),
+    # 数据集信息
     "text_column": "content",
-    "id_column": "id",
-    "label_column": "label",
-
-    # 可选：每个类别最多采样多少条，避免一下子读整个 THUCNews
-    "max_samples_per_class": 2000,
-
-    "output_embeddings": os.path.join(DATA_DIR, "output", "thucnews_embeddings.npy"),
-    "output_npz": os.path.join(DATA_DIR, "output", "thucnews_with_id_label.npz"),
-    "output_meta": os.path.join(DATA_DIR, "output", "thucnews_meta.csv"),
+    "id_column": "content_id",
+    "label_column": "sentiment_value",  # 比如：-1/0/1 或 0/1/2
+    # 语义向量文件
+    "output_embeddings": os.getenv(
+        "OUTPUT_EMBEDDING", os.path.join(DATA_DIR, "output", "bert_embeddings.npy")
+    ),
+    # 带 meta 的 npz 文件
+    "output_npz": os.getenv(
+        "OUTPUT_NPZ", os.path.join(DATA_DIR, "output", "bert_with_id_label.npz")
+    ),
+    # 元信息（和原始 df 一样，只是顺序固定）
+    "output_meta": os.getenv(
+        "OUTPUT_META", os.path.join(DATA_DIR, "output", "reviews_meta.csv")
+    ),
 }
-
 
 # ========= sentiment =========
 SENTIMENT = {}
@@ -97,7 +67,19 @@ CLUSTERING = {
     "kmeans_n_clusters": 20,  # 每个情感块的目标簇数上限
 }
 
+NLP = {
+    # NER
+    "processors": "tokenize,pos,lemma,ner,depparse",
+    "lang": "zh",
+    "use_gpu": False,
+    # LLM
+    "model_name": "gpt-4o",
+    "max_tokens": 2000,
+    "temperature": 0.7,
+}
+
 # ========= 重载配置 =========
 CONFIG["EMBEDDING"] = EMBEDDING
 CONFIG["SENTIMENT"] = SENTIMENT
 CONFIG["CLUSTERING"] = CLUSTERING
+CONFIG["NLP"] = NLP

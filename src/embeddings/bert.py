@@ -1,6 +1,6 @@
 """
 功能：
-  - 从 CSV 或 THUCNews 目录 加载数据集
+  - 从 CSV 目录 加载数据集
   - 用 BERT 提取句子级 mean pooling 句向量
   - 把向量保存成 .npy / .npz，元信息保存成 .csv
 
@@ -20,12 +20,9 @@ from src.common.log_utils import init_logger
 from src.config.settings import CONFIG, LOG_DIR
 
 
-class CsvBertEmbedder:
+class BertEmbedder:
     """
     基于 BERT 的文本编码器：
-      - 支持两种数据源：
-          - CSV：input_csv + text_column
-          - THUCNews 目录：input_dir（子目录为类别名，文件为新闻）
       - 编码 mean pooling 句向量
       - 输出 npy/npz + meta CSV
     """
@@ -93,9 +90,9 @@ class CsvBertEmbedder:
 
         self.logger.info(f"[Embedding] 模型加载完成，使用设备: {device}")
 
-    # ========= 数据加载：CSV / THUCNews =========
+    # ========= 数据加载：CSV=========
 
-    def _load_texts_from_csv(self) -> Tuple[pd.DataFrame, List[str]]:
+    def load_texts(self) -> Tuple[pd.DataFrame, List[str]]:
         """
         从 CSV 加载文本和元信息（id、label 等）。
         要求 CSV 至少有一列文本列 text_column。
@@ -114,102 +111,6 @@ class CsvBertEmbedder:
         texts = df[text_column].astype(str).tolist()
         self.logger.info(f"[Embedding] 样本数: {len(texts)}")
         return df, texts
-
-    def _load_texts_from_thucnews_dir(self) -> Tuple[pd.DataFrame, List[str]]:
-        """
-        从 THUCNews 目录加载数据：
-        目录结构示例：
-            data/thucnews/
-                体育/
-                    123.txt
-                    456.txt
-                财经/
-                    ...
-        约定：
-          - label_name = 子目录名
-          - label = 按 label_name 排序后的索引（0,1,2,...）
-          - id = label_name + 文件名
-          - content = 文件全文
-        """
-        input_dir = self.config["input_dir"]
-        text_column = self.config.get("text_column", "content")
-        id_column = self.config.get("id_column", "id")
-        label_column = self.config.get("label_column", "label")
-
-        if not os.path.isdir(input_dir):
-            raise ValueError(f"[Embedding] THUCNews 目录不存在: {input_dir}")
-
-        self.logger.info(f"[Embedding] 从 THUCNews 目录加载数据: {input_dir}")
-
-        label_names = [
-            d for d in os.listdir(input_dir)
-            if os.path.isdir(os.path.join(input_dir, d))
-        ]
-        label_names = sorted(label_names)
-        if not label_names:
-            raise ValueError(f"[Embedding] 目录 {input_dir} 下未找到任何子目录（类别）")
-
-        self.logger.info(f"[Embedding] 检测到类别: {label_names}")
-
-        rows = []
-        total = 0
-
-        max_samples_per_class = self.config.get("max_samples_per_class")  # 可选截断
-
-        for label_idx, label_name in enumerate(label_names):
-            label_dir = os.path.join(input_dir, label_name)
-            files = [
-                f for f in os.listdir(label_dir)
-                if os.path.isfile(os.path.join(label_dir, f)) and f.endswith(".txt")
-            ]
-
-            if max_samples_per_class is not None:
-                files = files[:max_samples_per_class]
-
-            self.logger.info(
-                f"[Embedding] 类别={label_name} (label={label_idx})，文件数={len(files)}"
-            )
-
-            for fname in files:
-                fpath = os.path.join(label_dir, fname)
-                # 防止编码问题，ignore 直接跳过非法字节
-                with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
-                    content = f.read().strip()
-                if not content:
-                    continue
-
-                row_id = f"{label_name}_{fname}"
-                rows.append(
-                    {
-                        id_column: row_id,
-                        label_column: label_idx,
-                        "label_name": label_name,
-                        text_column: content,
-                    }
-                )
-                total += 1
-
-        if not rows:
-            raise ValueError(f"[Embedding] 未从 {input_dir} 读取到任何文本，请检查目录结构和编码")
-
-        df = pd.DataFrame(rows)
-        texts = df[text_column].astype(str).tolist()
-        self.logger.info(f"[Embedding] THUCNews 加载完成，样本数: {total}")
-        return df, texts
-
-    def load_texts(self) -> Tuple[pd.DataFrame, List[str]]:
-        """
-        根据 dataset_type 选择加载模式：
-          - csv
-          - thucnews_dir
-        """
-        dataset_type = self.config.get("dataset_type", "csv")
-        if dataset_type == "csv":
-            return self._load_texts_from_csv()
-        elif dataset_type == "thucnews_dir":
-            return self._load_texts_from_thucnews_dir()
-        else:
-            raise ValueError(f"不支持的数据集类型 dataset_type={dataset_type}")
 
     # ========= 编码 =========
 
@@ -304,7 +205,43 @@ class CsvBertEmbedder:
 
         return df, all_embeddings
 
+    # ------------------------------------------------------
+    # 单句编码接口
+    # ------------------------------------------------------
+    def embed(self, text: str):
+        """
+        对外接口：对单条文本做 BERT 编码，返回句向量 (numpy, shape=[hidden])
+        """
+        # 自动加载模型
+        if self.model is None or self.tokenizer is None or self.device is None:
+            self.build_model_and_tokenizer()
+
+        encoded = self.tokenizer(
+            [text],
+            padding=True,
+            truncation=True,
+            max_length=self.config["max_length"],
+            return_tensors="pt",
+        )
+        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**encoded)
+            last_hidden = outputs.last_hidden_state  # [1, seq_len, hidden]
+            attention_mask = encoded["attention_mask"]  # [1, seq_len]
+
+            mask = attention_mask.unsqueeze(-1)
+            sum_embeddings = (last_hidden * mask).sum(dim=1)
+            sum_mask = mask.sum(dim=1).clamp(min=1e-9)
+            mean_pooled = sum_embeddings / sum_mask  # [1, hidden]
+
+            vec = torch.nn.functional.normalize(mean_pooled, p=2, dim=1)
+
+        return vec[0].cpu().numpy()  # (hidden,)
+
 
 if __name__ == "__main__":
-    embedder = CsvBertEmbedder(CONFIG.get("EMBEDDING"))
-    embedder.run()
+    embedder = BertEmbedder(CONFIG.get("EMBEDDING"))
+    # embedder.run()
+    res = embedder.embed("你好，世界！")
+    print(res.shape)
