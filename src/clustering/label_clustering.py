@@ -26,11 +26,7 @@ class LabelClusterer:
       - 可视化输出（可选）
     """
 
-    def __init__(
-        self,
-        embedder: BertEmbedder,
-    ):
-        self.embedder = embedder  # 你自己的 BERT 向量模型
+    def __init__(self):
         self.config = CONFIG.get("CLUSTERING", {})
         self.n_components = self.config.get("PCA_COMPONENTS", 50)
         self.kmeans_k = self.config.get("KMEANS_K", 20)
@@ -112,29 +108,26 @@ class LabelClusterer:
     # --------- 主流程 ---------
     def fit_predict(
         self,
-        labels: list[str],
+        embeddings: np.ndarray,
         algo: str = None,
-        save_metrics: bool = True,
+        kmeans_k: int = None,
         visualize: bool = True,
     ):
         """
         输入：
-          - labels: list[str]
+          - embeddings: np.ndarray
           - algo: 'kmeans' | 'hdbscan' | None（默认 self.default_algo）
-          - save_metrics: 是否保存指标 JSON
           - visualize: 是否生成可视化
         输出：
           - dict 包含聚类结果
         """
         algo = (algo or self.default_algo).lower()
-        self.logger.info(f"[Embed] 编码 {len(labels)} 条标签")
-        embeddings = self.embedder.embed_batch(labels)
         X = self.pca_reduce(embeddings)
         n_samples = X.shape[0]
 
         results = {}
         if algo in ("kmeans", "both"):
-            k = min(self.kmeans_k, n_samples)
+            k = min(kmeans_k, n_samples) if kmeans_k else min(self.kmeans_k, n_samples)
             self.logger.info(f"[KMeans] 聚类数={k}")
             kmeans = MiniBatchKMeans(
                 n_clusters=k, batch_size=min(1024, n_samples), random_state=42
@@ -168,7 +161,8 @@ class LabelClusterer:
                     min_cluster_size=min_cluster,
                     min_samples=1,
                     metric="euclidean",
-                    core_dist_n_jobs=-1,
+                    # core_dist_n_jobs=-1,  # Windows下并行处理会导致编码错误
+                    core_dist_n_jobs=1,
                 )
                 hdb_center_labels = hdb.fit_predict(centers)
                 if "kmeans" in results:
@@ -196,9 +190,6 @@ class LabelClusterer:
 
 
 if __name__ == "__main__":
-    embedder = BertEmbedder()
-    clusterer = LabelClusterer(embedder)
-
     labels = [
         "手机电池续航",
         "手机屏幕质量",
@@ -252,11 +243,45 @@ if __name__ == "__main__":
         "手表心率监测",
     ]
 
-    # --------- 聚类 ---------
-    results = clusterer.fit_predict(labels, visualize=True, save_metrics=True)
+    embedder = BertEmbedder()
+    clusterer = LabelClusterer()
 
-    # --------- 输出结果 ---------
-    print("Labels:", labels)
-    print("KMeans labels:", results["kmeans"]["labels"])
-    print("HDBSCAN labels:", results["hdbscan"]["labels"])
-    print("Metrics:", results)
+    embeddings = embedder.embed_batch(labels)
+    # --------- 聚类 ---------
+    results = clusterer.fit_predict(embeddings, visualize=True)
+    print(results)
+
+    """
+    result:
+    {
+        "kmeans": {
+            "labels": array([16,  4,  7,  8,  0,  5,  3,  6, 11, 12,  4, 16,  7,  2,  0, 10,  3,
+                        6, 16, 12, 16,  7,  7, 11,  0,  9, 19, 18,  2, 17,  5,  4, 15,  8,
+                        0,  9, 13,  6, 11, 17, 10, 14,  7,  1,  0,  7,  3,  6,  1, 12],
+                      dtype=int32),
+            "metrics": {
+                "n_samples": 50,
+                "n_in_clusters": 50,
+                "n_clusters": 20,
+                "silhouette": 0.22446654736995697,
+                "calinski": 4.992252826690674,
+                "davies_bouldin": 0.9360142646561812,
+            },
+            "fig_path": "D:\\ComputerScience\\Python\\temp\\ml_homework3\\data\\output\\figures\\kmeans_clusters_20251203_193230.png",
+        },
+        "hdbscan": {
+            "labels": array([ 2,  2,  2,  0,  0, -1,  1,  0,  0,  1,  2,  2,  2,  0,  0,  2,  1,
+                        0,  2,  1,  2,  2,  2,  0,  0,  2,  1,  0,  0,  1, -1,  2,  2,  0,
+                        0,  2,  1,  0,  0,  1,  2, -1,  2,  0,  0,  2,  1,  0,  0,  1]),
+            "metrics": {
+                "n_samples": 50,
+                "n_in_clusters": 47,
+                "n_clusters": 3,
+                "silhouette": 0.12346836179494858,
+                "calinski": 5.97938346862793,
+                "davies_bouldin": 2.255895295566246,
+            },
+            "fig_path": "D:\\ComputerScience\\Python\\temp\\ml_homework3\\data\\output\\figures\\hdbscan_clusters_20251203_193231.png",
+        },
+    }
+    """

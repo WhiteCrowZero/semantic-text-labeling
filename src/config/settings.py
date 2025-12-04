@@ -18,6 +18,7 @@ CONFIG = {
     "SENTIMENT": {},
     "CLUSTERING": {},
     "NLP": {},
+    "WEB": {},
 }
 
 # ========= embedding =========
@@ -25,7 +26,9 @@ EMBEDDING = {
     # 模型：推荐中文 RoBERTa WWM，比 bert-base-chinese 更强一些
     "model_name": "hfl/chinese-roberta-wwm-ext",
     # 若指定本地模型路径，则优先从本地加载；为空则使用 model_name 从 HuggingFace 下载
-    "local_model_path": os.path.join(MODEL_DIR, "embeddings", "chinese-roberta-wwm-ext"),
+    "local_model_path": os.path.join(
+        MODEL_DIR, "embeddings", "chinese-roberta-wwm-ext"
+    ),
     # 设备：cuda / cpu，留空则自动检测
     "device": os.getenv("DEVICE", ""),
     # BERT 相关参数
@@ -39,15 +42,16 @@ SENTIMENT = {}
 # ========= clustering =========
 CLUSTERING = {
     "PCA_COMPONENTS": 30,  # PCA 降维维度
-    "KMEANS_K": 20,  # KMeans 聚类数上限
+    "KMEANS_K": 3,  # KMeans 聚类数
     "FIG_DIR": os.path.join(DATA_DIR, "output", "figures"),
-    "DEFAULT_ALGO": "both",   # 默认算法类型 kmeans 或 hdbscan 或 both
+    "DEFAULT_ALGO": "both",  # 默认算法类型 kmeans 或 hdbscan 或 both
 }
 
+# ========= nlp =========
 NLP = {
     # NER
     "processors": "tokenize,pos,lemma,ner,depparse",
-    "lang": "zh",
+    "lang": "zh-hans",
     "use_gpu": False,
     "local_model_path": os.path.join(MODEL_DIR, "ner"),
     # LLM
@@ -56,8 +60,16 @@ NLP = {
     "temperature": 0.7,
 }
 
+# ========= web =========
+WEB = {
+    "llm_batch_size": 30,
+    "clustering_batch_size": 60,
+    "file_save_path": os.path.join(DATA_DIR, "input", "files"),
+}
+
 # ========= 重载配置 =========
 CONFIG["EMBEDDING"] = EMBEDDING
 CONFIG["SENTIMENT"] = SENTIMENT
 CONFIG["CLUSTERING"] = CLUSTERING
 CONFIG["NLP"] = NLP
+CONFIG["WEB"] = WEB

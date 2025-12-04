@@ -52,13 +52,13 @@ class NLPProcessor:
             stanza.download(model_name, model_dir=self.local_model_path, verbose=False)
         # ----------- 3. 本地不存在，开始下载模型 -----------
         else:
-            self.logger.info(f"[NLP] 本地未找到 Stanza 模型，正在从远程下载: {model_name}")
+            self.logger.info(f"[NLP] 本地未找到 Stanza 模型，正在从远程下载: {model_name}，到: {self.local_model_path}")
 
             try:
                 stanza.download(
                     model_name, model_dir=self.local_model_path, verbose=False  # 不要输出太多内容
                 )
-                self.logger.info(f"[NLP] 已成功下载 Stanza 模型到: {self.local_model_path}")
+                self.logger.info(f"[NLP] 已成功下载 Stanza 模型")
             except Exception as e:
                 self.logger.error(f"[NLP] 下载 Stanza 模型失败: {e}")
                 raise e
