@@ -7,7 +7,7 @@ from src.config.settings import CONFIG, LOG_DIR
 from src.common.llm_utils import build_new_messages, split_reply, timeit
 
 
-class MainOpenAIModule:
+class OpenAILLM:
     """
     基于 OpenAI GPT-4o 的主语言处理模块
 
@@ -16,11 +16,13 @@ class MainOpenAIModule:
 
     def __init__(self):
         self.name = "LLM OpenAI Module"
-        self.model = CONFIG.get("model_name", "gpt-4o")
-        self.max_completion_tokens = CONFIG.get("max_tokens", 2000)
-        self.temperature = CONFIG.get("temperature", 0.7)
+        self.config = CONFIG.get("NLP", {})
+        self.model = self.config.get("model_name", "gpt-4o")
+        self.max_completion_tokens = self.config.get("max_tokens", 2000)
+        self.temperature = self.config.get("temperature", 0.7)
+
         self.logger = init_logger(
-            name="llm",
+            name="nlp_llm",
             module_name=str(self.__class__.__name__),
             log_dir=os.path.join(LOG_DIR, "model"),
         )
@@ -31,11 +33,12 @@ class MainOpenAIModule:
         self.client = OpenAI(api_key=self.__api_key)
 
     @timeit
-    def process(self) -> str:
+    def process(self, text: str) -> str:
         """
         处理对话消息并生成回复
         """
         messages = build_new_messages()
+        messages.append({"role": "user", "content": f"Text: {text}"})
         try:
             # 调用 OpenAI GPT-4o 接口获取回复
             response = self.client.chat.completions.create(
@@ -60,7 +63,64 @@ class MainOpenAIModule:
         pure_reply = split_reply(ai_reply)
         return pure_reply
 
+    def process_batch(self, texts: list[str]) -> dict[int, str]:
+        """
+        批量处理对话消息并生成回复
+        """
+        messages = build_new_messages()
+        messages.append(
+            {
+                "role": "system",
+                "content": "For each input text, Return the result strictly in the format:\n[id]: [label]",
+            }
+        )
+
+        # 构造编号输入
+        items = "\n".join([f"{i+1}. {t}" for i, t in enumerate(texts)])
+        messages.append(
+            {"role": "user", "content": f"Here are the texts to classify:\n{items}"}
+        )
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=0,
+                max_completion_tokens=self.max_completion_tokens,
+            )
+        except Exception as e:
+            self.logger.error(f"API 调用错误: {e}")
+            return {}
+
+        ai_reply = response.choices[0].message.content
+        raw = split_reply(ai_reply)
+
+        # 解析输出：  "1: label\n2: label"
+        result = {}
+        for line in raw.split("\n"):
+            if ":" in line:
+                idx, label = line.split(":", 1)
+                idx = int(idx.strip())
+                label = label.strip()
+                result[idx] = label
+
+        return result
+
 
 if __name__ == "__main__":
-    main_openai_module = MainOpenAIModule()
-    print(main_openai_module.process())
+    openai_module = OpenAILLM()
+    # res = openai_module.process("这个鱼肉真难吃，蔬菜少的可怜，我吃的一点不开心，下次不会再来了，餐厅服务也不好")
+    # print(res)
+
+    res2 = openai_module.process_batch(
+        [
+            "这个鱼肉真难吃，蔬菜少的可怜，我吃的一点不开心，下次不会再来了，餐厅服务也不好",
+            "这个餐厅的菜味道很不错，服务也很好，下次还会再来",
+        ]
+    )
+    print(res2)
+
+    """
+    result:
+    {1: '食物质量', 2: '食物味道'}
+    """

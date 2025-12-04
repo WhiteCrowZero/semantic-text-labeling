@@ -1,5 +1,6 @@
-import functools
+import copy
 import time
+import functools
 
 
 def build_new_messages():
@@ -9,11 +10,23 @@ def build_new_messages():
     new_messages = [
         {
             "role": "system",
-            "content": "You are an AI voice assistant. Respond concisely in short sentences.",
+            "content": f"""
+                You are a text classification model.
+                
+                Task:
+                - Given one input text, output exactly ONE short label (1–5 words).
+                - The label must capture the main topic or issue, preferably with a specific entity (e.g., delivery, packaging, customer service, product quality, price, etc.).
+                - Avoid vague labels like "good review" or "bad review".
+                - Do NOT output multiple labels.
+                - Do NOT output explanations or extra text.
+                - Output MUST be a single plain label string only.
+                - Do NOT use punctuation or special characters.
+                - Use the same language as user input text.
+            """,
         }
     ]
 
-    return new_messages
+    return copy.deepcopy(new_messages)
 
 
 def split_reply(full_reply: str, flag="</think>"):

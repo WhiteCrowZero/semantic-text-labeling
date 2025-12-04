@@ -74,6 +74,7 @@ def init_logger(name, module_name, log_dir="./logs", level=logging.INFO):
     """
     setup_logger(level=level, log_dir=log_dir, log_filename=f"{name}_{module_name}.log")
     logger = logging.getLogger(module_name)
+    # logger.propagate = False
     return logger
 
 

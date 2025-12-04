@@ -11,9 +11,7 @@
 
 import os
 import torch
-import numpy as np
-import pandas as pd
-from typing import List, Tuple
+from typing import List
 from transformers import AutoTokenizer, AutoModel
 
 from src.common.log_utils import init_logger
@@ -27,8 +25,9 @@ class BertEmbedder:
       - 输出 npy/npz + meta CSV
     """
 
-    def __init__(self, config: dict):
-        self.config = config
+    def __init__(self):
+        self.config = CONFIG.get("EMBEDDING", {})
+
         self.logger = init_logger(
             name="embeddings",
             module_name=str(self.__class__.__name__),
@@ -90,121 +89,6 @@ class BertEmbedder:
 
         self.logger.info(f"[Embedding] 模型加载完成，使用设备: {device}")
 
-    # ========= 数据加载：CSV=========
-
-    def load_texts(self) -> Tuple[pd.DataFrame, List[str]]:
-        """
-        从 CSV 加载文本和元信息（id、label 等）。
-        要求 CSV 至少有一列文本列 text_column。
-        """
-        input_csv = self.config["input_csv"]
-        text_column = self.config["text_column"]
-
-        self.logger.info(f"[Embedding] 从 CSV 加载数据集: {input_csv}")
-        df = pd.read_csv(input_csv)
-
-        if text_column not in df.columns:
-            raise ValueError(
-                f"CSV 中找不到文本列 '{text_column}'，现有列: {df.columns.tolist()}"
-            )
-
-        texts = df[text_column].astype(str).tolist()
-        self.logger.info(f"[Embedding] 样本数: {len(texts)}")
-        return df, texts
-
-    # ========= 编码 =========
-
-    def encode_batch(self, sentences: List[str]) -> np.ndarray:
-        """
-        对一批句子做 BERT 编码，返回 mean pooling 向量（已 L2 归一化）。
-        """
-        if self.model is None or self.tokenizer is None or self.device is None:
-            raise RuntimeError("模型未初始化，请先调用 build_model_and_tokenizer().")
-
-        encoded = self.tokenizer(
-            sentences,
-            padding=True,
-            truncation=True,
-            max_length=self.config["max_length"],
-            return_tensors="pt",
-        )
-        encoded = {k: v.to(self.device) for k, v in encoded.items()}
-
-        with torch.no_grad():
-            outputs = self.model(**encoded)
-            last_hidden = outputs.last_hidden_state           # [batch, seq_len, hidden]
-            attention_mask = encoded["attention_mask"]        # [batch, seq_len]
-
-            # mean pooling
-            mask = attention_mask.unsqueeze(-1)               # [batch, seq_len, 1]
-            sum_embeddings = (last_hidden * mask).sum(dim=1)
-            sum_mask = mask.sum(dim=1).clamp(min=1e-9)
-            mean_pooled = sum_embeddings / sum_mask
-
-            embs = torch.nn.functional.normalize(mean_pooled, p=2, dim=1)
-
-        return embs.cpu().numpy()  # [batch, hidden]
-
-    # ========= 主流程 =========
-
-    def run(self):
-        """
-        主流程：加载数据 -> BERT 编码 -> 保存结果
-        """
-        # 1. 加载数据（CSV or THUCNews）
-        df, texts = self.load_texts()
-        total = len(texts)
-
-        # 2. 加载模型
-        self.build_model_and_tokenizer()
-
-        max_length = self.config["max_length"]
-        batch_size = self.config["batch_size"]
-        self.logger.info(
-            f"[Embedding] 开始编码，batch_size={batch_size}, max_length={max_length}"
-        )
-
-        # 3. 逐批编码
-        all_embeddings = []
-        for start in range(0, total, batch_size):
-            end = min(start + batch_size, total)
-            batch_texts = texts[start:end]
-
-            embs = self.encode_batch(batch_texts)
-            all_embeddings.append(embs)
-
-            self.logger.info(f"[Embedding] 已编码 {end}/{total}")
-
-        all_embeddings = np.vstack(all_embeddings)
-        self.logger.info(f"[Embedding] 向量形状: {all_embeddings.shape}")  # (N, hidden_size)
-
-        # 4. 取 id / label
-        id_column = self.config["id_column"]
-        label_column = self.config["label_column"]
-        ids = df[id_column].to_numpy()
-        labels = df[label_column].to_numpy()
-
-        # 5. 保存文件
-        output_embeddings = self.config["output_embeddings"]
-        output_npz = self.config["output_npz"]
-        output_meta = self.config["output_meta"]
-
-        np.save(output_embeddings, all_embeddings)
-        np.savez(
-            output_npz,
-            ids=ids,             # [N]
-            embeddings=all_embeddings,  # [N, hidden]
-            labels=labels,       # [N]
-        )
-        self.logger.info(f"[Embedding] 已保存向量到: {output_embeddings}")
-        self.logger.info(f"[Embedding] 已保存 npz 到: {output_npz}")
-
-        # 保留完整 meta，后续聚类/分析用
-        df.to_csv(output_meta, index=False)
-        self.logger.info(f"[Embedding] 已保存元信息到: {output_meta}")
-
-        return df, all_embeddings
-
     # ------------------------------------------------------
     # 单句编码接口
     # ------------------------------------------------------
@@ -239,9 +123,49 @@ class BertEmbedder:
 
         return vec[0].cpu().numpy()  # (hidden,)
 
+    def embed_batch(self, texts: List[str]):
+        """
+        对外接口：对一批文本做 BERT 编码，返回句向量 (numpy, shape=[batch, hidden])
+        """
+        # 自动加载模型
+        if self.model is None or self.tokenizer is None or self.device is None:
+            self.build_model_and_tokenizer()
+
+        encoded = self.tokenizer(
+            texts,
+            padding=True,
+            truncation=True,
+            max_length=self.config["max_length"],
+            return_tensors="pt",
+            )
+        encoded = {k: v.to(self.device) for k, v in encoded.items()}
+
+        with torch.no_grad():
+            outputs = self.model(**encoded)
+            last_hidden = outputs.last_hidden_state  # [batch, seq_len, hidden]
+            attention_mask = encoded["attention_mask"]  # [batch, seq_len]
+
+            mask = attention_mask.unsqueeze(-1)
+            sum_embeddings = (last_hidden * mask).sum(dim=1)
+            sum_mask = mask.sum(dim=1).clamp(min=1e-9)
+            mean_pooled = sum_embeddings / sum_mask  # [batch, hidden]
+
+            embs = torch.nn.functional.normalize(mean_pooled, p=2, dim=1)
+
+        return embs.cpu().numpy()  # (batch, hidden)
+
 
 if __name__ == "__main__":
-    embedder = BertEmbedder(CONFIG.get("EMBEDDING"))
+    embedder = BertEmbedder()
     # embedder.run()
     res = embedder.embed("你好，世界！")
     print(res.shape)
+
+    res2 = embedder.embed_batch(["你好，世界！", "Hello, world!"])
+    print(res2.shape)
+
+    """
+    result:
+    (786, )
+    (2, 786)
+    """
