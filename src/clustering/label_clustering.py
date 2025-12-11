@@ -6,7 +6,10 @@ import hdbscan
 import matplotlib.pyplot as plt
 
 from sklearn.decomposition import PCA
+import umap.umap_ as umap
 from sklearn.cluster import MiniBatchKMeans
+from sklearn.preprocessing import normalize
+from sklearn.manifold import TSNE
 from sklearn.metrics import (
     silhouette_score,
     davies_bouldin_score,
@@ -39,16 +42,6 @@ class LabelClusterer:
             log_dir=os.path.join(LOG_DIR, "model"),
         )
 
-    # --------- PCA 降维 ---------
-    def pca_reduce(self, embeddings: np.ndarray) -> np.ndarray:
-        n_samples, n_features = embeddings.shape
-        n_components = min(self.n_components, n_samples)
-        self.logger.info(f"[PCA] 降维到 {n_components} 维")
-        pca = PCA(n_components=n_components, random_state=42)
-        X = pca.fit_transform(embeddings)
-        self.logger.info(f"[PCA] 总解释方差: {pca.explained_variance_ratio_.sum():.4f}")
-        return X
-
     # --------- 内部指标 ---------
     def evaluate_metrics(self, X: np.ndarray, labels: np.ndarray) -> dict:
         mask = labels != -1
@@ -78,31 +71,99 @@ class LabelClusterer:
             self.logger.error("[Plot] 未设置 fig_dir")
             return ""
 
+        X = np.asarray(X)
+        labels = np.asarray(labels)
+
+        n_samples = X.shape[0]
+        if labels.shape[0] != n_samples:
+            self.logger.error(
+                f"[Plot] labels 长度 {labels.shape[0]} != 样本数 {n_samples}，跳过绘图"
+            )
+            return ""
+
+        if n_samples < 2:
+            self.logger.warning("[Plot] 样本太少，跳过 t-SNE 绘图")
+            return ""
+
         os.makedirs(self.fig_dir, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        fig_path = os.path.join(self.fig_dir, f"{algo_name}_clusters_{timestamp}.png")
+        fig_path = os.path.join(
+            self.fig_dir, f"{algo_name}_tsne_clusters_{timestamp}.png"
+        )
 
-        p2 = PCA(n_components=2, random_state=42)
-        X2 = p2.fit_transform(X)
+        # -------- t-SNE 降维 --------
+        # perplexity 必须 < n_samples，这里做一个安全设置
+        perp = min(30, max(2, n_samples // 3))
+        if perp >= n_samples:
+            perp = max(1, n_samples - 1)
 
+        self.logger.info(
+            f"[Plot] 使用 t-SNE 可视化，perplexity={perp}, n_samples={n_samples}"
+        )
+
+        tsne = TSNE(
+            n_components=2,
+            perplexity=perp,
+            learning_rate="auto",
+            init="random",
+            random_state=42,
+        )
+        X2 = tsne.fit_transform(X)  # (n_samples, 2)
+
+        # -------- 画图 --------
         plt.figure(figsize=(10, 8))
-        for lab in sorted(set(labels)):
+        # 颜色序列：可以自己换成喜欢的；数量不够会循环使用
+        color_cycle = [
+            "tab:blue",
+            "tab:orange",
+            "tab:green",
+            "tab:red",
+            "tab:purple",
+            "tab:brown",
+            "tab:pink",
+            "tab:gray",
+            "tab:olive",
+            "tab:cyan",
+        ]
+
+        # 1. 先画噪声（-1）
+        mask_noise = labels == -1
+        if np.any(mask_noise):
+            plt.scatter(
+                X2[mask_noise, 0],
+                X2[mask_noise, 1],
+                s=8,
+                c="lightgray",
+                alpha=0.5,
+                label="noise",
+            )
+
+        # 2. 其他标签按“顺序列表”+颜色序列来画
+        #    这里用 sorted 保证顺序稳定，你也可以换成自己控制的顺序列表
+        ordered_labels = [lab for lab in sorted(set(labels)) if lab != -1]
+
+        for idx, lab in enumerate(ordered_labels):
             mask = labels == lab
-            if lab == -1:
-                plt.scatter(
-                    X2[mask, 0], X2[mask, 1], s=5, c="gray", alpha=0.5, label="noise"
-                )
-            else:
-                plt.scatter(
-                    X2[mask, 0], X2[mask, 1], s=5, alpha=0.7, label=f"cluster {lab}"
-                )
+            if not np.any(mask):
+                continue
+
+            color = color_cycle[idx % len(color_cycle)]  # 顺序映射到颜色
+            plt.scatter(
+                X2[mask, 0],
+                X2[mask, 1],
+                s=8,
+                alpha=0.7,
+                color=color,
+                label=f"cluster {lab}",
+            )
+
         plt.legend(fontsize=8)
-        plt.title(f"{algo_name.upper()} Label Clusters (2D PCA)")
+        plt.title(f"{algo_name.upper()} Label Clusters (t-SNE 2D)")
         plt.tight_layout()
         plt.savefig(fig_path, dpi=200)
         plt.close()
 
-        self.logger.info(f"[Plot] 聚类图保存到: {fig_path}")
+        self.logger.info(f"[Plot] 聚类 t-SNE 图保存到: {fig_path}")
         return fig_path
 
     # --------- 主流程 ---------
@@ -115,73 +176,126 @@ class LabelClusterer:
     ):
         """
         输入：
-          - embeddings: np.ndarray
-          - algo: 'kmeans' | 'hdbscan' | None（默认 self.default_algo）
-          - visualize: 是否生成可视化
+          - embeddings: np.ndarray, 形状 (n_samples, dim)
+          - algo: 'kmeans' | 'hdbscan' | 'both' | None（默认 self.default_algo）
+          - visualize: 是否生成 t-SNE 可视化
         输出：
           - dict 包含聚类结果
         """
         algo = (algo or self.default_algo).lower()
-        X = self.pca_reduce(embeddings)
+        X = np.asarray(embeddings)
         n_samples = X.shape[0]
 
         results = {}
+
+        # ---------- KMeans ----------
         if algo in ("kmeans", "both"):
-            k = min(kmeans_k, n_samples) if kmeans_k else min(self.kmeans_k, n_samples)
-            self.logger.info(f"[KMeans] 聚类数={k}")
-            kmeans = MiniBatchKMeans(
-                n_clusters=k, batch_size=min(1024, n_samples), random_state=42
-            )
-            kmeans_labels = kmeans.fit_predict(X)
-            kmeans_fig_path = (
-                self.plot_clusters(X, kmeans_labels, "kmeans") if visualize else None
-            )
-            results["kmeans"] = {
-                "labels": kmeans_labels,
-                "metrics": self.evaluate_metrics(X, kmeans_labels),
-                "fig_path": kmeans_fig_path,
-            }
-
-        if algo in ("hdbscan", "both"):
-            # 如果没有 KMeans，HDBSCAN 在 embeddings 上直接聚类
-            if "kmeans" in results:
-                centers = (
-                    MiniBatchKMeans(
-                        n_clusters=min(self.kmeans_k, n_samples), random_state=42
-                    )
-                    .fit(X)
-                    .cluster_centers_
-                )
+            # 真实使用的 k
+            if kmeans_k is not None:
+                k = kmeans_k
             else:
-                centers = X
+                k = self.kmeans_k
 
-            if centers.shape[0] >= 3:
-                min_cluster = max(2, centers.shape[0] // 5)
-                hdb = hdbscan.HDBSCAN(
-                    min_cluster_size=min_cluster,
-                    min_samples=1,
-                    metric="euclidean",
-                    # core_dist_n_jobs=-1,  # Windows下并行处理会导致编码错误
-                    core_dist_n_jobs=1,
+            k = int(min(max(2, k), n_samples))  # 至少2类，不超过样本数
+
+            if k < 2:
+                self.logger.warning("[KMeans] 样本太少，跳过 KMeans")
+            else:
+                self.logger.info(f"[KMeans] 聚类数 = {k}")
+                kmeans_model = MiniBatchKMeans(
+                    n_clusters=k,
+                    batch_size=min(1024, n_samples),
+                    random_state=42,
                 )
-                hdb_center_labels = hdb.fit_predict(centers)
-                if "kmeans" in results:
-                    hdb_labels = hdb_center_labels[results["kmeans"]["labels"]]
-                else:
-                    hdb_labels = hdb_center_labels
-                hdbscan_fig_path = (
-                    self.plot_clusters(X, hdb_labels, "hdbscan") if visualize else None
+                kmeans_labels = kmeans_model.fit_predict(X)
+
+                kmeans_fig_path = (
+                    self.plot_clusters(X, kmeans_labels, "kmeans")
+                    if (visualize and n_samples > 1)
+                    else None
                 )
-                results["hdbscan"] = {
-                    "labels": hdb_labels,
-                    "metrics": self.evaluate_metrics(X, hdb_labels),
-                    "fig_path": hdbscan_fig_path,
+
+                results["kmeans"] = {
+                    "labels": kmeans_labels,
+                    "metrics": self.evaluate_metrics(X, kmeans_labels),
+                    "fig_path": kmeans_fig_path,
                 }
 
-            else:
-                self.logger.warning("[HDBSCAN] 样本或簇中心不足，跳过 HDBSCAN")
+        # ---------- HDBSCAN ----------
+        if algo in ("hdbscan", "both"):
+            # 1) 在样本上聚类，不走 KMeans center
+            centers = X
+            self.logger.info(f"[HDBSCAN] 直接在样本上聚类，样本数 = {centers.shape[0]}")
+
+            n_centers = centers.shape[0]
+            if n_centers >= 5:
+                # 2) 先归一化 + UMAP 降维到默认维
+                centers_norm = normalize(centers)  # L2 归一化
+                n_components = min(
+                    self.n_components, centers_norm.shape[1], n_centers - 1
+                )
+
+                if n_components >= 2:
+                    reducer = umap.UMAP(
+                        n_components=n_components,
+                        n_neighbors=15,  # 可按需调整
+                        min_dist=0.1,  # 可按需调整
+                        random_state=42,
+                    )
+                    centers_reduced = reducer.fit_transform(centers_norm)
+                else:
+                    centers_reduced = centers_norm
+
+                # # 2) 先归一化 + PCA 降维到默认维
+                # centers_norm = normalize(centers)  # L2 归一化
+                # n_components = min(
+                #     self.n_components, centers_norm.shape[1], n_centers - 1
+                # )
+                # if n_components >= 2:
+                #     pca = PCA(n_components=n_components, random_state=42)
+                #     centers_reduced = pca.fit_transform(centers_norm)
+                # else:
+                #     centers_reduced = centers_norm
+
+                # 3) 设置更温和的 min_cluster_size / min_samples
+                min_cluster = max(10, int(0.02 * n_centers))
+                min_samples = max(5, int(0.01 * n_centers))
+                # min_cluster = 20
+                # min_samples = 5
+
+                self.logger.info(
+                    f"[HDBSCAN] min_cluster_size={min_cluster}, "
+                    f"min_samples={min_samples}, n_centers={n_centers}"
+                )
+
+                hdb = hdbscan.HDBSCAN(
+                    min_cluster_size=min_cluster,
+                    min_samples=min_samples,
+                    metric="euclidean",  # 向量已经归一化 + 降维
+                    cluster_selection_method="leaf",
+                    core_dist_n_jobs=1,
+                )
+                hdb_labels = hdb.fit_predict(centers_reduced)  # 直接是样本级标签
+
+                # 看一下 label 分布
+                uniq, cnt = np.unique(hdb_labels, return_counts=True)
+                self.logger.info(f"[HDBSCAN] label 分布: {dict(zip(uniq, cnt))}")
+
+                hdbscan_fig_path = (
+                    self.plot_clusters(centers_reduced, hdb_labels, "hdbscan")
+                    if (visualize and n_centers > 1)
+                    else None
+                )
+
                 results["hdbscan"] = {
-                    "labels": np.full(n_samples, -1, dtype=int),
+                    "labels": hdb_labels,
+                    "metrics": self.evaluate_metrics(centers_reduced, hdb_labels),
+                    "fig_path": hdbscan_fig_path,
+                }
+            else:
+                self.logger.warning("[HDBSCAN] 样本不足，跳过 HDBSCAN")
+                results["hdbscan"] = {
+                    "labels": np.full(n_centers, -1, dtype=int),
                     "metrics": {},
                     "fig_path": "",
                 }

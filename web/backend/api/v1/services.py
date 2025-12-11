@@ -1,5 +1,8 @@
+import json
 import os
 from typing import List
+import time
+import random
 
 from src.common.log_utils import init_logger
 from src.config.settings import CONFIG, LOG_DIR
@@ -47,7 +50,9 @@ class TextModelService:
 
     def batch_tag_analysis(self, texts: List[str], algo: str, k: int):
         self.logger.info(f"[Service] 开始处理文本，待处理文本{len(texts)}条")
-        # tags_list = []
+        tags_list = []
+        from src.config.settings import DATA_DIR
+
         # for i in range(0, len(texts), self._llm_batch_size):
         #     self.logger.info(
         #         "[Service] 处理第{}-{}条文本".format(
@@ -57,7 +62,27 @@ class TextModelService:
         #     llm_texts = texts[i : i + self._llm_batch_size]
         #     llm_tags = self._llm_tag(llm_texts)
         #     tags_list.extend(llm_tags.values())
-        tags_list = texts
+        #
+        #     with open(
+        #         os.path.join(DATA_DIR, "output", "emotion_tags", f"tags{i}.json"),
+        #         "w",
+        #         encoding="utf-8",
+        #     ) as f:
+        #         json.dump(tags_list, f, ensure_ascii=False, indent=4)
+        #
+        #     time.sleep(random.uniform(2, 5))
+        #
+        # with open(
+        #     os.path.join(DATA_DIR, "output", "emotion_tags", "tags.json"),
+        #     "w",
+        #     encoding="utf-8",
+        # ) as f:
+        #     json.dump(tags_list, f, ensure_ascii=False, indent=4)
+
+        # 测试用
+        with open(os.path.join(DATA_DIR, "output", "emotion_tags", "tags.json"), "r", encoding="utf-8") as f:
+            tags_list = json.load(f)
+
         self.logger.info("[Service] LLM处理完成")
 
         if len(tags_list) < self._clustering_batch_size:

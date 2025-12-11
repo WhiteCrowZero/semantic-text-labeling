@@ -41,8 +41,8 @@ SENTIMENT = {}
 
 # ========= clustering =========
 CLUSTERING = {
-    "PCA_COMPONENTS": 30,  # PCA 降维维度
-    "KMEANS_K": 3,  # KMeans 聚类数
+    "PCA_COMPONENTS": 50,  # PCA 降维维度
+    "KMEANS_K": 5,  # KMeans 聚类数
     "FIG_DIR": os.path.join(DATA_DIR, "output", "figures"),
     "DEFAULT_ALGO": "both",  # 默认算法类型 kmeans 或 hdbscan 或 both
 }
@@ -52,6 +52,7 @@ NLP = {
     # NER
     "processors": "tokenize,pos,lemma,ner,depparse",
     "lang": "zh-hans",
+    # "lang": "en",
     "use_gpu": False,
     "local_model_path": os.path.join(MODEL_DIR, "ner"),
     # LLM

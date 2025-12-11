@@ -39,17 +39,17 @@ class NLPProcessor:
             os.makedirs(self.local_model_path, exist_ok=True)
 
         # ----------- 1. 判断本地是否已下载 -----------
-        use_local = False
+        model_exists = False
         if self.local_model_path:
             model_folder = os.path.join(self.local_model_path, model_name)
             resources_json = os.path.join(model_folder, "resources.json")
             if os.path.exists(resources_json):
-                use_local = True
+                model_exists = True
 
         # ----------- 2. 若存在本地模型，则直接加载 -----------
-        if use_local:
+        if model_exists:
             self.logger.info(f"[NLP] 从本地加载 Stanza 模型: {self.local_model_path}")
-            stanza.download(model_name, model_dir=self.local_model_path, verbose=False)
+
         # ----------- 3. 本地不存在，开始下载模型 -----------
         else:
             self.logger.info(f"[NLP] 本地未找到 Stanza 模型，正在从远程下载: {model_name}，到: {self.local_model_path}")

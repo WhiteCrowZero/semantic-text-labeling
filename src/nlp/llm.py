@@ -29,6 +29,7 @@ class OpenAILLM:
         # 加载 API KEY
         load_dotenv()
         self.__api_key = os.getenv("OPENAI_API_KEY")
+        # self.__api_key = os.getenv("OPENAI_API_KEY_REAL")
         # 初始化 OpenAI 客户端
         self.client = OpenAI(api_key=self.__api_key)
 

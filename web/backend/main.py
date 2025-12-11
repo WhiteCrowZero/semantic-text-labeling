@@ -59,7 +59,7 @@ app.add_middleware(
 )
 
 # 初始化服务（只加载一次）
-nlp_service = TextModelService()
+model_service = TextModelService()
 
 
 @app.get("/health")
@@ -70,7 +70,7 @@ def health_check():
 @app.post("/ner", response_model=NERResponse)
 def ner_api(req: NERRequest):
     try:
-        raw = nlp_service.ner_analysis(req.text)
+        raw = model_service.ner_analysis(req.text)
 
         entities = [Entity(text=e[0], type=e[1]) for e in raw["entities"]]
         adj_pairs = [AdjPair(subject=p[0], adjective=p[1]) for p in raw["adj_pairs"]]
@@ -94,7 +94,7 @@ def run_tag_job(task_id: str, req: TagSubmitRequest):
         TASK_STATUS[task_id]["status"] = "running"
 
         texts = FILE_CACHE[req.file_hash]
-        res = nlp_service.batch_tag_analysis(texts, req.algo, req.kmeans_k)
+        res = model_service.batch_tag_analysis(texts, req.algo, req.kmeans_k)
         tag_res = res.get("tags", [])
         clustering_res = res.get("clustering_res", {})
 
